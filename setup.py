@@ -1,17 +1,18 @@
 import setuptools
 
-with open("README.md", "r") as fh:
-    long_description = fh.read()
+with open("README.md", "r") as f:
+    long_description = f.read()
 
 setuptools.setup(
     name='poi-clustering',
-    version='0.0.2',
+    version='0.0.5',
+    description='Point-of-Interest clustering from GPS trajectories',
     author='Woohyeok Choi',
     author_email='woohyeok.choi@kaist.ac.kr',
     long_description=long_description,
     long_description_content_type="text/markdown",
     url='https://github.com/woohyeok-choi/poi-clustering',
-    packages=setuptools.find_packages(),
+    packages=['poi'],
     install_requires=[
         'numpy',
         'scikit-learn'

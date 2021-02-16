@@ -5,7 +5,6 @@ from sklearn.base import ClusterMixin
 from uuid import uuid4
 
 R = 63710088
-NON_LABEL = 'NONE'
 
 
 def latlng_haversine_dist(l1: Iterable[float], l2: Iterable[float]):
@@ -48,18 +47,17 @@ def latlng_eq_rect(ref_coord: Iterable[float], pt_coord: Iterable[Iterable[float
     return np.column_stack([x, y])
 
 
-def latlng_inverse_eq_rect(ref_coord: Iterable[float], pt_coord: Union[Iterable[float], np.ndarray]) -> np.ndarray:
+def latlng_inverse_eq_rect(ref_coord: Iterable[float], x: float, y: float) -> Tuple[float, float]:
     ref_lat, ref_lng = ref_coord
-    pt_coord = pt_coord if type(pt_coord) == np.ndarray else np.array(pt_coord)
-    pt_x, pt_y = pt_coord[:, 0].ravel(), pt_coord[:, 1].ravel()
 
-    lat = pt_y / R + ref_lat
-    lng = pt_x / (R * np.cos((ref_lat + lat) / 2)) + ref_lng
+    lat = y / R + ref_lat
+    lng = x / (R * np.cos((ref_lat + lat) / 2)) + ref_lng
 
-    return np.column_stack([lat, lng])
+    return lat, lng
 
 
 class PoiCluster(ClusterMixin):
+    NON_LABEL = 'NONE'
 
     def __init__(self, d_max: float, r_max: float, t_max: float, t_min: float):
         """
@@ -84,7 +82,7 @@ class PoiCluster(ClusterMixin):
         self._label_keys = []
         self._stay_points = None
         self._stay_time = None
-        self._stay_region_grids: Optional[Tuple[float, float], str] = None
+        self._stay_region_grids: Optional[Dict[Tuple[float, float], str]] = None
         self._ref_coord = None
 
     @property
@@ -124,13 +122,16 @@ class PoiCluster(ClusterMixin):
         """
         r = {}
 
-        for g, c in self._stay_region_grids.items():
-            lat0, lng0 = latlng_inverse_eq_rect(self._ref_coord, map(lambda x: x * self._grid_width, g)).ravel()
-            lat1, lng1 = latlng_inverse_eq_rect(self._ref_coord, map(lambda x: (x + 1) * self._grid_width, g)).ravel()
+        for (x, y), c in self._stay_region_grids.items():
+            x_s, y_s = x * self._grid_width, y * self._grid_width
+            x_e, y_e = (x + 1) * self._grid_width, (y + 1) * self._grid_width
+
+            lat0, lng0 = latlng_inverse_eq_rect(self._ref_coord, x_s, y_s)
+            lat1, lng1 = latlng_inverse_eq_rect(self._ref_coord, x_e, y_e)
             r[tuple([lat0, lng0, lat1, lng1])] = c
         return r
 
-    def fit(self, x: np.ndarray, timestamps: Optional[np.ndarray] = None) -> 'PoiCluster':
+    def fit(self, X: np.ndarray, timestamps: Optional[np.ndarray] = None) -> 'PoiCluster':
         """
         Parameters
         ----------
@@ -143,8 +144,8 @@ class PoiCluster(ClusterMixin):
         -------
         poi_cluster: PoiCluster
         """
-        ref_coord = np.min(x, axis=0)
-        stay_points, stay_time = self._find_stay_points(x, timestamps)
+        ref_coord = np.min(X, axis=0)
+        stay_points, stay_time = self._find_stay_points(X, timestamps)
         stay_regions = self._find_stay_region(ref_coord, stay_points)
 
         self._ref_coord = ref_coord
@@ -154,7 +155,7 @@ class PoiCluster(ClusterMixin):
 
         return self
 
-    def predict(self, x: np.ndarray) -> np.ndarray:
+    def predict(self, X: np.ndarray) -> np.ndarray:
         """
         Parameters
         ----------
@@ -167,8 +168,8 @@ class PoiCluster(ClusterMixin):
             If the sample does not included in any cluster, it has 'NONE' label.
         """
         assert self._ref_coord is not None, 'You should \'fit\' cluster before \'predict\''
-        grids = self._make_grids(self._ref_coord, x)
-        labels = [self._stay_region_grids.get(tuple(g)) for g in grids]
+        grids = self._make_grids(self._ref_coord, X)
+        labels = [self._stay_region_grids.get(tuple(g), '') for g in grids]
         return np.array(labels)
 
     def fit_predict(self, x: np.ndarray, timestamps: Optional[np.ndarray] = None) -> np.ndarray:
@@ -221,16 +222,22 @@ class PoiCluster(ClusterMixin):
                 j = j + 1
             if eof:
                 break
+
+        if not stay_points or not stay_time:
+            raise ValueError('Cannot find any stay points or time; try with different "d_max", "t_min", or "t_max".')
+
         return np.vstack(stay_points), np.vstack(stay_time)
 
     def _find_stay_region(self, ref_coord: np.ndarray, stay_points: np.ndarray):
+        _EMPTY_LABEL = ''
+
         grids = self._make_grids(ref_coord, stay_points)
-        stay_region_ids = np.repeat(NON_LABEL, grids.shape[0]).astype(object)
+        stay_region_ids = np.repeat(_EMPTY_LABEL, grids.shape[0]).astype(object)
         stay_region_center = []
         stay_region_grids = {}
 
-        while np.any(stay_region_ids == NON_LABEL):
-            g, c = np.unique(grids[stay_region_ids == NON_LABEL], axis=0, return_counts=True)
+        while np.any(stay_region_ids == _EMPTY_LABEL):
+            g, c = np.unique(grids[stay_region_ids == _EMPTY_LABEL], axis=0, return_counts=True)
             g_dense = g[np.argsort(c)[-1]]
 
             indices = []
@@ -240,7 +247,7 @@ class PoiCluster(ClusterMixin):
                 # masked array of the neighboring grids within in all grids.
                 indices_ng = np.any(np.all(grids[:, None] == ng, axis=2), axis=1)
                 # check whether the grid is already assigned to any id.
-                if np.any(stay_region_ids[indices_ng] == NON_LABEL):
+                if np.any(stay_region_ids[indices_ng] == _EMPTY_LABEL):
                     indices.append(np.flatnonzero(indices_ng))
 
             if len(indices) == 0:
