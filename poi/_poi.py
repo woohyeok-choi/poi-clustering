@@ -4,7 +4,7 @@ from itertools import product
 from sklearn.base import ClusterMixin
 from uuid import uuid4
 
-R = 63710088
+R = 6371008
 
 
 def latlng_haversine_dist(l1: Iterable[float], l2: Iterable[float]):
