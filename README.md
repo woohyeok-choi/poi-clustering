@@ -20,24 +20,9 @@ pip install poi-clustering
 ```
 
 ## How to Use
-This implementation follows scikit-learn's grammar; *fit* and *predict*. For more details, please see docstrings in codes. 
+* This implementation follows scikit-learn's grammar; *fit* and *predict*. For more details, please see docstrings in codes. 
+* [Example](https://github.com/woohyeok-choi/poi-clustering/blob/master/example.ipynb)
 
-```commandline
-pip install poi-clustering kse801-dataset 
-```
 
-```python
-from kse801.abc import load_location
-import numpy as np
-from poi import PoiCluster
 
-# Dummy data of gps coordinates
-loc = load_location()
-loc_deg = loc.loc[:, ['latitude', 'longitude']].to_numpy()
-loc_rad = np.radians(loc_deg)
-timestamps = loc.loc[:, 'timestamp'].values
-cluster = PoiCluster(d_max=250, r_max=500, t_max=60, t_min=5)
-cluster.fit(x=loc_rad, timestamps=timestamps)
-label = cluster.predict(loc_rad)
-```
 
